@@ -1,0 +1,118 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include <sys/msg.h>
+
+/**
+ * @brief Eventos
+ * identificaran el tipo de mensaje
+ */
+
+typedef enum {
+    EVT_NINGUNO,            // 0
+    EVN_CONSULTA_STOCK,     // 1
+    EVN_RESPUESTA_STOCK,    // 2
+    EVT_SUMA_STOCK,         // 3
+    EVT_RESTA_STOCK         // 4
+} Eventos;
+
+typedef struct mensaje {
+    long long_dest;
+    int int_rte;
+    int int_evento;
+    char char_mensaje[1024];
+}mensaje;
+
+/**
+ * @brief Paso 1, la clave compartida
+ */
+
+key_t crear_clave() {
+    key_t clave = ftok("/bin/ls", 33);
+    if (clave == (key_t) -1){
+        printf("Error al crear la clave");
+        exit(0);
+    }
+    return clave;
+}
+
+/**
+ * @brief Paso 2, crear la cola de mensajes
+ * ! int msgget(key_t, int) 
+ * @param key_t la clave creada en 1
+ * @param int los flags → 0777|IPC_CREAT
+ */
+
+int crar_cola_mensaje() {
+    int id_cola;
+    id_cola = msgget(crear_clave(), 0777/IPC_CREAT);
+    if (id_cola == -1){
+        printf("Error al crear cola de mensajes");
+        exit(0);
+    }
+    return id_cola;
+}
+
+/**
+ * @brief Paso 3, usar la cola: Enviar mensaje
+ * ! msgsnd(int, struct msgbuf*, int, int)
+ * @param int id_cola
+ * @param struct msgbuf* → el mensaje
+ * @param int 
+ * @param int 
+ * 
+ * struct msgbuf* es una estructura en el que el primer campo debe ser un long para almacenar el tipo de mensaje
+ */
+
+int enviar_mensaje(int id_cola, long rLongDest, int rIntRte, int rIntEvento, char* rpCharMsg){
+    mensaje msg;
+    msg.long_dest = rLongDest;
+    msg.int_rte = rIntRte;
+    msg.int_evento = rIntEvento;
+    strcpy(msg.char_mensaje, rpCharMsg);
+
+    return msgsnd(id_cola, (struct msgbuf *)&msg, sizeof(msg.int_rte)+sizeof(msg.int_evento)+sizeof(msg.char_mensaje), IPC_NOWAIT);
+}
+
+/*
+enviar_mensaje(id_cola, destinatario, remitente, evento, texto)
+
+enviar_mensaje(id_cola, MSG_SUPERMERCADO, MSG_REPOSITOR, EVT_SUMA_STOCK, "suma uno");
+*/
+
+/**
+ * @brief Paso 4, recoger mensaje
+ * ! msgrcv(int, struct msgbuf *, int, int, int)
+ * @param int id_cola
+ * @param struct msgbuf* → el mensaje
+ * @param int size de la estructura (sin el long)
+ * @param int tipo de mensaje (entero o 0 para cualquiera)
+ * @param int flags ( 0 → espera, IPC_NOWAIT → no espera)
+ */
+
+int recibir_mensaje(int id_cola, long rLongDest, mensaje *rMsg){
+    mensaje msg;
+    int res;
+    res = msgrcv(id_cola, (struct msgbuf*)&msg, sizeof(msg.int_rte)+sizeof(msg.int_evento)+sizeof(msg.char_mensaje), rLongDest, 0);
+
+    rMsg->long_dest = msg.long_dest;
+    rMsg->int_rte = msg.int_rte;
+    rMsg->int_evento = msg.int_evento;
+    strcpy(rMsg->char_mensaje, msg.char_mensaje);
+    return res;
+}
+
+/*
+recibir_mensaje(id_cola, receptor, &mensaje)
+
+recibir_mensaje(id_cola, MSG_SUPERMERCADO, &rMsg);
+*/
+
+/**
+ * @brief Paso 5, destruir la cola de mensajes
+ * ! msgctl (int, int, struct msqid_ds *)
+ * @param int id_cola
+ * @param int IPC_RMID
+ * @param (struct msqid_ds *) NULL
+ */
